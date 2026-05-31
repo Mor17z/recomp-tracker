@@ -255,6 +255,30 @@
   <!-- ============ VERLAUF ============ -->
   <section id="v-prog" class="view">
     <div class="card">
+      <div class="label">Überblick</div>
+      <div class="statrow">
+        <div class="stat"><div class="v" id="cTotal">0</div><div class="l">Einheiten</div></div>
+        <div class="stat"><div class="v" id="cStreak">0</div><div class="l">Streak (Tage)</div></div>
+        <div class="stat"><div class="v amber" id="cVol">0</div><div class="l">Tonnage (t)</div></div>
+      </div>
+      <div class="statrow" style="margin-top:10px">
+        <div class="stat"><div class="v" id="cWeek">0</div><div class="l">Diese Woche</div></div>
+        <div class="stat"><div class="v" id="cPerWk">0</div><div class="l">Ø / Woche</div></div>
+        <div class="stat"><div class="v" id="cRpe">–</div><div class="l">Ø RPE</div></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="label">Einheiten pro Woche</div>
+      <div class="chartwrap" id="freqChart"></div>
+    </div>
+
+    <div class="card">
+      <div class="label">Volumen pro Woche (Tonnage)</div>
+      <div class="chartwrap" id="volChart"></div>
+    </div>
+
+    <div class="card">
       <div class="label">Kraftverlauf – Übung wählen</div>
       <select class="inp" id="liftSel"></select>
       <div class="statrow" style="margin-top:12px">
@@ -265,14 +289,19 @@
       <div class="chartwrap" id="liftChart"></div>
       <div class="xs mut" style="margin-top:6px">Bestes Arbeitsgewicht (schwerster Satz) je Einheit.</div>
     </div>
+
     <div class="card">
-      <div class="label">Trainings-Konsistenz</div>
-      <div class="statrow">
-        <div class="stat"><div class="v" id="cTotal">0</div><div class="l">Einheiten</div></div>
-        <div class="stat"><div class="v" id="cWeek">0</div><div class="l">Diese Woche</div></div>
-        <div class="stat"><div class="v" id="cVol">0</div><div class="l">Tonnage (t)</div></div>
+      <div class="label">Urlaub / Pause eintragen</div>
+      <div class="row2">
+        <div class="fld" style="margin-bottom:0"><div class="label">Von</div><input class="inp" type="date" id="vac-from"></div>
+        <div class="fld" style="margin-bottom:0"><div class="label">Bis</div><input class="inp" type="date" id="vac-to"></div>
       </div>
+      <div class="fld" style="margin:11px 0 0"><input class="inp" id="vac-note" placeholder="Notiz (optional, z.B. Urlaub Italien)"></div>
+      <button class="btn ghost sm" id="vacSave" style="margin-top:11px">Pause speichern</button>
+      <div class="xs mut" style="margin-top:8px">Pausen zählen nicht als verpasstes Training und unterbrechen die Streak nicht.</div>
+      <div id="vacList" style="margin-top:6px"></div>
     </div>
+
     <div class="card tight">
       <button class="btn ghost sm" id="exportBtn">Daten exportieren (JSON)</button>
     </div>
@@ -399,11 +428,16 @@ const PLAN = {
     ]},
   }},
 };
-function phaseKey(w){ if(w<=2)return"p1"; if(w<=4)return"p2"; if(w===5)return"p3"; return"deload"; }
+const TEMPLATES = { p1:"Technik & Adaptation", p2:"Volumen aufbauen", p3:"Intensitätspeak", deload:"Deload" };
+function phaseKey(w){
+  if(w<=2)return"p1"; if(w<=4)return"p2"; if(w===5)return"p3"; if(w===6)return"deload";
+  const c=S.weeks && S.weeks[w]; return c || "p2";
+}
+function maxWeek(){ const extra=Object.keys(S.weeks||{}).map(Number); return Math.max(6, ...(extra.length?extra:[6])); }
 function daysFor(w){ return Object.keys(PLAN[phaseKey(w)].days); }
 
 /* ---------- state ---------- */
-let S = { week:1, day:"A", sessions:[], weights:[], measures:[], editId:null };
+let S = { week:1, day:"A", sessions:[], weights:[], measures:[], vacations:[], weeks:{}, editId:null };
 const $ = s=>document.querySelector(s);
 const todayISO = ()=> new Date().toISOString().slice(0,10);
 const fmtD = iso=>{const d=new Date(iso+"T00:00:00");return d.toLocaleDateString("de-DE",{day:"2-digit",month:"2-digit"});};
@@ -423,8 +457,14 @@ function lastEntry(name){
 
 /* ---------- TRAINING view ---------- */
 function renderWeekChips(){
-  $("#weekchips").innerHTML = [1,2,3,4,5,6].map(w=>
-    `<button class="chip ${w===S.week?"on":""}" onclick="app.setWeek(${w})">${w}</button>`).join("");
+  const mx=maxWeek(); let html="";
+  for(let w=1; w<=mx; w++){
+    const custom = w>6;
+    const blk = w>6 ? ` <span class="xs" style="opacity:.6">·${TEMPLATES[phaseKey(w)].slice(0,3)}</span>` : "";
+    html += `<button class="chip ${w===S.week?"on":""}" onclick="app.setWeek(${w})">${w}${custom?blk:""}</button>`;
+  }
+  html += `<button class="chip" style="border-style:dashed;color:var(--teal)" onclick="app.addWeekPrompt()">＋ Woche</button>`;
+  $("#weekchips").innerHTML = html;
 }
 function renderDayChips(){
   const ds=daysFor(S.week);
@@ -432,8 +472,17 @@ function renderDayChips(){
   $("#daychips").innerHTML = ds.map(d=>
     `<button class="chip day ${d===S.day?"on":""}" onclick="app.setDay('${d}')">Tag ${d}</button>`).join("");
   const p=PLAN[phaseKey(S.week)];
+  let extra="";
+  if(S.week>6){
+    extra = `<div style="display:flex;gap:7px;margin-top:9px;align-items:center">
+      <select class="inp" style="flex:1;padding:9px" onchange="app.setWeekTemplate(${S.week}, this.value)">
+        ${Object.keys(TEMPLATES).map(k=>`<option value="${k}" ${phaseKey(S.week)===k?"selected":""}>Vorlage: ${TEMPLATES[k]}</option>`).join("")}
+      </select>
+      <button class="chip" style="color:var(--red);border-color:var(--line2)" onclick="app.removeWeek(${S.week})">Woche löschen</button>
+    </div>`;
+  }
   $("#phasebar").innerHTML =
-    `<div class="phasebar ${p.deload?"deload":""}"><span class="dot"></span><span class="sm">${p.label}</span></div>`;
+    `<div class="phasebar ${p.deload?"deload":""}"><span class="dot"></span><span class="sm">Woche ${S.week} · ${p.label}</span></div>${extra}`;
 }
 function renderExercises(){
   const p=PLAN[phaseKey(S.week)], day=p.days[S.day];
@@ -587,6 +636,27 @@ function allLoggedNames(){
   S.sessions.forEach(s=>s.entries.forEach(e=>set.add(e.n)));
   return [...set];
 }
+function sessionVol(s){ let v=0; s.entries.forEach(e=>e.sets.forEach(st=>{v+=(num(st.kg)||0)*(num(st.reps)||0);})); return v; }
+function isVacationDay(iso){ return S.vacations.some(v=> iso>=v.from && iso<=v.to); }
+function dayOffset(iso,n){ const d=new Date(iso+"T00:00:00"); d.setDate(d.getDate()+n); return d.toISOString().slice(0,10); }
+/* streak = consecutive recent days that are either a training day OR a vacation day, allowing normal rest gaps */
+function trainingStreak(){
+  if(!S.sessions.length) return 0;
+  const trained=new Set(S.sessions.map(s=>s.date));
+  let day=todayISO(), streak=0, restRun=0;
+  // walk backwards up to 365 days
+  for(let i=0;i<365;i++){
+    if(trained.has(day)){ streak++; restRun=0; }
+    else if(isVacationDay(day)){ /* neutral, keep streak */ }
+    else { restRun++; if(restRun>3) break; } // >3 rest days in a row ends the streak
+    day=dayOffset(day,-1);
+  }
+  return streak;
+}
+function isoWeekKey(iso){
+  const d=new Date(iso+"T00:00:00"); const day=(d.getDay()+6)%7; d.setDate(d.getDate()-day); // Monday
+  return d.toISOString().slice(0,10);
+}
 function renderProg(){
   const names=allLoggedNames();
   const sel=$("#liftSel");
@@ -594,12 +664,44 @@ function renderProg(){
   sel.innerHTML = names.length? names.map(n=>`<option>${n}</option>`).join("") : `<option>– noch keine Daten –</option>`;
   if(names.includes(prev)) sel.value=prev;
   drawLift();
-  // consistency
+
+  // overview stats
   $("#cTotal").textContent=S.sessions.length;
-  const now=new Date(); const cutoff=new Date(now); cutoff.setDate(now.getDate()-7);
-  $("#cWeek").textContent=S.sessions.filter(s=>new Date(s.date+"T00:00:00")>=cutoff).length;
-  let vol=0; S.sessions.forEach(s=>s.entries.forEach(e=>e.sets.forEach(st=>{vol+=(num(st.kg)||0)*(num(st.reps)||0);})));
+  $("#cStreak").textContent=trainingStreak();
+  let vol=0; S.sessions.forEach(s=>vol+=sessionVol(s));
   $("#cVol").textContent=(vol/1000).toFixed(1);
+  const now=new Date(); const cut=new Date(now); cut.setDate(now.getDate()-7);
+  $("#cWeek").textContent=S.sessions.filter(s=>new Date(s.date+"T00:00:00")>=cut).length;
+
+  // per-week aggregation
+  const byWeek={};
+  S.sessions.forEach(s=>{ const k=isoWeekKey(s.date); (byWeek[k]=byWeek[k]||{n:0,vol:0}); byWeek[k].n++; byWeek[k].vol+=sessionVol(s); });
+  const weeks=Object.keys(byWeek).sort();
+  $("#cPerWk").textContent = weeks.length? (S.sessions.length/weeks.length).toFixed(1) : "0";
+
+  // avg RPE
+  let rsum=0,rn=0; S.sessions.forEach(s=>s.entries.forEach(e=>e.sets.forEach(st=>{ if(st.rpe){rsum+=st.rpe;rn++;} })));
+  $("#cRpe").textContent = rn? (rsum/rn).toFixed(1) : "–";
+
+  // charts
+  const freqPts=weeks.map(k=>({label:fmtD(k), value:byWeek[k].n}));
+  const volPts =weeks.map(k=>({label:fmtD(k), value:+(byWeek[k].vol/1000).toFixed(2)}));
+  $("#freqChart").innerHTML = barChart(freqPts, "", true);
+  $("#volChart").innerHTML  = barChart(volPts, "t", false);
+
+  renderVacations();
+}
+function renderVacations(){
+  const el=$("#vacList"); if(!el) return;
+  const vs=S.vacations.slice().sort((a,b)=>a.from<b.from?1:-1);
+  if(!vs.length){ el.innerHTML=`<div class="xs mut" style="padding:8px 0">Noch keine Pausen eingetragen.</div>`; return; }
+  el.innerHTML = vs.map(v=>{
+    const days=Math.round((new Date(v.to)-new Date(v.from))/86400000)+1;
+    return `<div class="hist"><div class="hbadge" style="background:var(--amber-soft);border-color:#5a420f"><b style="color:var(--amber)">${days}</b><span>Tage</span></div>
+      <div class="hmid"><div class="t">${fmtD(v.from)} – ${fmtD(v.to)}</div>
+      <div class="xs mut">${v.note||"Pause"}</div></div>
+      <button class="del" onclick="app.delVacation('${v.id}')">✕</button></div>`;
+  }).join("");
 }
 function drawLift(){
   const name=$("#liftSel").value;
@@ -644,8 +746,26 @@ function lineChart(points,unit){
     ${dots}${labels}
   </svg>`;
 }
-
-/* ---------- header summary ---------- */
+function barChart(points,unit,integer){
+  if(!points || !points.length)
+    return `<div class="empty" style="padding:18px"><div>Noch keine Daten.</div></div>`;
+  const W=320,H=120,padB=18,padT=14, n=points.length;
+  const hi=Math.max(1,...points.map(p=>p.value));
+  const gap=4, bw=Math.max(6,(W-8)/n - gap);
+  const X=i=> 4 + i*((W-8)/n) + ((W-8)/n - bw)/2;
+  const Hb=v=> (v/hi)*(H-padB-padT);
+  const bars=points.map((p,i)=>{
+    const h=Hb(p.value), y=H-padB-h;
+    const val = integer? p.value : p.value.toFixed(1);
+    const lbl = (n<=10 || i%Math.ceil(n/8)===0 || i===n-1)
+      ? `<text x="${(X(i)+bw/2).toFixed(1)}" y="${H-5}" font-size="8.5" fill="var(--mut2)" text-anchor="middle" font-family="Barlow">${p.label}</text>` : "";
+    const vt = p.value>0 ? `<text x="${(X(i)+bw/2).toFixed(1)}" y="${(y-3).toFixed(1)}" font-size="8.5" fill="var(--teal)" text-anchor="middle" font-family="Barlow Semi Condensed" font-weight="700">${val}</text>` : "";
+    return `<rect x="${X(i).toFixed(1)}" y="${y.toFixed(1)}" width="${bw.toFixed(1)}" height="${Math.max(0,h).toFixed(1)}" rx="3" fill="var(--teal)" opacity="0.85"/>${vt}${lbl}`;
+  }).join("");
+  return `<svg class="chart" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">${bars}
+    ${unit?`<text x="2" y="11" font-size="9" fill="var(--mut2)" font-family="Barlow">max ${hi.toFixed(1)} ${unit}</text>`:""}
+  </svg>`;
+}
 function updateHeader(){
   const avg=rollingAvg(S.weights,7);
   $("#hdrstat").innerHTML = avg!=null
@@ -657,6 +777,37 @@ function updateHeader(){
 const app = {
   setWeek(w){ S.week=w; S.editId=null; renderWeekChips(); renderDayChips(); renderExercises(); persistUI(); },
   setDay(d){ S.day=d; S.editId=null; renderDayChips(); renderExercises(); persistUI(); },
+  async addWeekPrompt(){
+    const nw = maxWeek()+1;
+    // sensible default: keep periodisation going (volume → intensity → volume → deload)
+    const seq = {7:"p2",8:"p2",9:"p3",10:"p3",11:"p2",12:"deload"};
+    S.weeks[nw] = seq[nw] || "p2";
+    await save("weeks", S.weeks);
+    S.week=nw; S.day="A"; S.editId=null;
+    renderWeekChips(); renderDayChips(); renderExercises();
+    toast("Woche "+nw+" angelegt – Vorlage wählbar");
+  },
+  async setWeekTemplate(w,key){
+    S.weeks[w]=key; await save("weeks",S.weeks);
+    S.day="A"; renderWeekChips(); renderDayChips(); renderExercises(); toast("Vorlage gesetzt");
+  },
+  async removeWeek(w){
+    const used = S.sessions.some(s=>s.week===w);
+    if(used && !confirm("In Woche "+w+" sind bereits Einheiten gespeichert. Woche trotzdem aus dem Plan entfernen? (Einträge bleiben im Verlauf erhalten)")) return;
+    delete S.weeks[w]; await save("weeks",S.weeks);
+    S.week=Math.min(w, maxWeek()); if(S.week>6 && !S.weeks[S.week]) S.week=6;
+    renderWeekChips(); renderDayChips(); renderExercises(); toast("Woche entfernt");
+  },
+  async addVacation(){
+    const from=$("#vac-from").value, to=$("#vac-to").value||from, note=$("#vac-note").value.trim();
+    if(!from){ toast("Bitte Startdatum wählen"); return; }
+    if(to<from){ toast("Enddatum vor Startdatum"); return; }
+    S.vacations.push({id:Date.now().toString(36), from, to, note});
+    await save("vacations",S.vacations);
+    $("#vac-note").value="";
+    renderVacations(); renderProg(); toast("Pause eingetragen ✓");
+  },
+  async delVacation(id){ S.vacations=S.vacations.filter(v=>v.id!==id); await save("vacations",S.vacations); renderVacations(); renderProg(); },
   step(ei,si,f,delta){
     const row=document.querySelector(`#exlist .setrow[data-ex="${ei}"][data-set="${si}"]`);
     const inp=row.querySelector(`[data-f="${f}"]`);
@@ -720,7 +871,7 @@ const app = {
   },
   async delMeas(date){ S.measures=S.measures.filter(m=>m.date!==date); await save("measures",S.measures); renderMeas(); },
   exportData(){
-    const blob=new Blob([JSON.stringify({sessions:S.sessions,weights:S.weights,measures:S.measures},null,2)],{type:"application/json"});
+    const blob=new Blob([JSON.stringify({sessions:S.sessions,weights:S.weights,measures:S.measures,vacations:S.vacations,weeks:S.weeks},null,2)],{type:"application/json"});
     const url=URL.createObjectURL(blob); const a=document.createElement("a");
     a.href=url; a.download="recomp_tracker_export.json"; a.click(); URL.revokeObjectURL(url);
     toast("Export erstellt");
@@ -745,15 +896,18 @@ $("#saveBtn").onclick=()=>app.saveSession();
 $("#wSave").onclick=()=>app.saveWeight();
 $("#mSave").onclick=()=>app.saveMeas();
 $("#exportBtn").onclick=()=>app.exportData();
+$("#vacSave").onclick=()=>app.addVacation();
 
 /* ---------- init ---------- */
 (async function init(){
-  S.sessions = await load("sessions",[]);
-  S.weights  = await load("weights",[]);
-  S.measures = await load("measures",[]);
-  const ui   = await load("ui",{week:1,day:"A"});
+  S.sessions  = await load("sessions",[]);
+  S.weights   = await load("weights",[]);
+  S.measures  = await load("measures",[]);
+  S.vacations = await load("vacations",[]);
+  S.weeks     = await load("weeks",{});
+  const ui    = await load("ui",{week:1,day:"A"});
   S.week=ui.week||1; S.day=ui.day||"A";
-  $("#w-date").value=todayISO(); $("#m-date").value=todayISO();
+  $("#w-date").value=todayISO(); $("#m-date").value=todayISO(); $("#vac-from").value=todayISO();
   renderEnergyChips(null);
   renderWeekChips(); renderDayChips(); renderExercises(); renderSessions(); updateHeader();
 })();
