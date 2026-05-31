@@ -308,33 +308,33 @@ async function save(key, val){
 
 /* ---------- the plan ---------- */
 const M="M",K="K",L="L",G="G";
-function ex(n,tag,sets,reps,int){return{n,tag,sets,reps,int};}
+function ex(n,tag,sets,reps,int,sk){return{n,tag,sets,reps,int,sk:sk??null};}
 const PLAN = {
   p1:{label:"Phase 1 · Technik & Adaptation · RPE 6–7", deload:false, days:{
     A:{title:"Tag A · Brust, Schultern, Quadrizeps", ex:[
-      ex("Beinpresse",M,3,"12","60–65% 1RM"),
-      ex("Brustpresse",M,3,"12","RPE 6–7"),
-      ex("Beinstrecker",M,3,"15","Technik"),
-      ex("Schulterpresse",M,3,"12","RPE 6"),
-      ex("Butterfly / Pec-Deck",M,3,"12","leicht"),
-      ex("Trizepsdrücken",K,3,"15","leicht"),
-      ex("Bauchpresse",M,3,"15","—"),
+      ex("Beinpresse",M,3,"12","60–65% 1RM",70),
+      ex("Brustpresse",M,3,"12","RPE 6–7",35),
+      ex("Beinstrecker",M,3,"15","Technik",30),
+      ex("Schulterpresse",M,3,"12","RPE 6",25),
+      ex("Butterfly / Pec-Deck",M,3,"12","leicht",30),
+      ex("Trizepsdrücken",K,3,"15","leicht",20),
+      ex("Bauchpresse",M,3,"15","—",25),
     ]},
     B:{title:"Tag B · Rücken, hintere Schulter, Beinbeuger", ex:[
-      ex("Latzug breit",M,3,"12","RPE 6–7"),
-      ex("Beinbeuger liegend",M,3,"12","Technik"),
-      ex("Sitzrudern eng",K,3,"12","RPE 6"),
-      ex("Reverse Butterfly",M,3,"15","RPE 6"),
-      ex("Bizeps-Curls 21er",L,3,"7+7+7","leicht"),
-      ex("Wadenheben sitzend",M,3,"15","—"),
+      ex("Latzug breit",M,3,"12","RPE 6–7",40),
+      ex("Beinbeuger liegend",M,3,"12","Technik",30),
+      ex("Sitzrudern eng",K,3,"12","RPE 6",40),
+      ex("Reverse Butterfly",M,3,"15","RPE 6",20),
+      ex("Bizeps-Curls 21er",L,3,"7+7+7","leicht",8),
+      ex("Wadenheben sitzend",M,3,"15","—",35),
     ]},
     D:{title:"Tag D · Ganzkörper (optional)", ex:[
-      ex("Hack-Squat",M,3,"12","RPE 6"),
-      ex("Schrägbank-Brustpresse",M,3,"12","RPE 6–7"),
-      ex("Rudermaschine (T-Bar)",M,3,"12","RPE 6"),
-      ex("Seitheben",M,3,"15","leicht"),
-      ex("Trizeps-Dips",G,3,"10–12","RPE 6"),
-      ex("Rückenstrecker",M,3,"12","RPE 6"),
+      ex("Hack-Squat",M,3,"12","RPE 6",40),
+      ex("Schrägbank-Brustpresse",M,3,"12","RPE 6–7",30),
+      ex("Rudermaschine (T-Bar)",M,3,"12","RPE 6",30),
+      ex("Seitheben",M,3,"15","leicht",7),
+      ex("Trizeps-Dips",G,3,"10–12","RPE 6",0),
+      ex("Rückenstrecker",M,3,"12","RPE 6",20),
     ]},
   }},
   p2:{label:"Phase 2 · Volumen aufbauen · RPE 7–8", deload:false, days:{
@@ -447,7 +447,7 @@ function renderExercises(){
     let pre=null;
     if(editing) pre = editing.entries.find(x=>x.n===e.n) || null;
     if(!pre) pre = lastEntry(e.n);
-    const defKg = pre ? (pre.sets[0]?.kg ?? "") : "";
+    const defKg = pre ? (pre.sets[0]?.kg ?? "") : (e.sk!=null ? e.sk : "");
     const setNote = pre ? (pre.setting||"") : "";
     let rows="";
     for(let si=0; si<e.sets; si++){
